@@ -2,8 +2,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.patches as patches
 from constants import GAMMA_PARAMS
+from scipy.ndimage import median_filter
 
-def display_images_side_by_side(images: list, titles: list=None, config_cmap: list[None, str]=None):
+## TODO: organize this file
+
+def display_images_side_by_side(images: list, titles: list=None, config_cmap: list[None, str]=None, save_path:list=None):
 
     num_images = len(images)
     
@@ -24,6 +27,9 @@ def display_images_side_by_side(images: list, titles: list=None, config_cmap: li
         axes[i].axis('off')  
         if titles and i < len(titles):  
             axes[i].set_title(titles[i])
+    
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
 
     plt.show()
 
@@ -159,3 +165,77 @@ def plot_patch_mask(x,y, patch_size1, mask, image, titles, patch_size2=None):
     #ax1.axis('off')
     
     plt.show()
+
+def mask_on_top_only(image, mask, save_path: str=None, verbose=False):
+    if len(image.shape) == 2:  
+        img_rgb = np.stack((image,) * 3, axis=-1)  
+    else:
+        img_rgb = image.copy()
+
+    plt.figure(figsize=(5, 5))
+    plt.imshow(img_rgb)  
+    plt.imshow(mask, cmap='jet', alpha=0.5)  
+    plt.axis('off') 
+
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+    if verbose:     
+        plt.show()
+
+
+def mask_on_top(image1, image2, mask, save_path: str=None, verbose=False, titles=["Image1", "Image2"]):
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+
+    #plt.figure(figsize=(5, 5))
+    axes[0].imshow(image1)  
+    axes[0].imshow(mask, cmap='jet', alpha=0.5)  
+    axes[0].axis('off') 
+    axes[0].set_title(titles[0])
+
+    axes[1].imshow(image2)  
+    axes[1].imshow(mask, cmap='jet', alpha=0.5)  
+    axes[1].axis('off') 
+    axes[1].set_title(titles[1])
+
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+    if verbose:     
+        plt.show()
+
+def post_blend_label(ima_dest: np.ndarray, patchex: np.ndarray, label_mode: str, intensity_logistic_params: tuple = (1.0, 0.0), tol=1) -> tuple:
+
+    difference = np.abs(ima_dest - patchex)
+    label_mask = (np.mean(difference, axis=-1, keepdims=True) > tol).astype(np.uint8)
+    label_mask[..., 0] = median_filter(label_mask[..., 0], size=5)  
+
+    if label_mode == 'continuous':
+        factor = np.random.uniform(0.05, 0.95)
+        label = label_mask * factor
+    elif label_mode in ['logistic-intensity', 'intensity']:
+        k, x0 = intensity_logistic_params
+        label = np.mean(difference * label_mask, axis=-1, keepdims=True)
+        label[..., 0] = median_filter(label[..., 0], size=5)
+        if label_mode == 'logistic-intensity':
+            label = label_mask / (1 + np.exp(-k * (label - x0)))
+    elif label_mode == 'binary':
+        label = label_mask
+    else:
+        raise ValueError(f"Unsupported label_mode: {label_mode}")
+
+    return patchex, label
+
+def get_neighbors(i: int, j: int, max_i: int, max_j: int):
+    return [(i + di, j) for di in (-1, 1) if 0 <= i + di <= max_i] + \
+        [(i, j + dj) for dj in (-1, 1) if 0 <= j + dj <= max_j]
+        
+
+def visualize_neighbors(ax, i, j, max_i, max_j):
+    grid = np.zeros((max_i + 1, max_j + 1))
+
+    grid[i, j] = 2
+
+    for ni, nj in get_neighbors(i, j, max_i, max_j):
+        grid[ni, nj] = 1
+
+    ax.imshow(grid, cmap="cool", origin="upper", extent=[0, max_j, max_i, 0])
